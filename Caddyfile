@@ -1,0 +1,11 @@
+{$SITE_DOMAIN} {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy client:80
+}
+
+{$ADMIN_DOMAIN} {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy admin:80
+}

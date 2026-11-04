@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LeadStatus {
+  NEW
+  UNDER_REVIEW
+  IN_WORK
+  REJECTED
+  COMPLETED
+}
+
+model Lead {
+  id        String     @id @default(cuid())
+  name      String
+  phone     String
+  service   String
+  quantity  Float?
+  unit      String?
+  estimate  Float?
+  message   String     @default("")
+  consentAt DateTime   @default(now())
+  status    LeadStatus @default(NEW)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  completedProject Project?
+
+  @@index([status, createdAt])
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  title       String
+  category    String
+  location    String
+  area        Int?
+  imageUrl    String
+  description String   @default("")
+  duration    String?
+  leadId      String?  @unique
+  lead        Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isPublished, sortOrder])
+}
+
+model NewsPost {
+  id          String   @id @default(cuid())
+  title       String
+  summary     String
+  body        String   @default("")
+  imageUrl    String?
+  publishedAt DateTime @default(now())
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isPublished, publishedAt])
+}
+
+model LandingPage {
+  id        String   @id @default("main")
+  settings  Json
+  sections  Json
+  updatedAt DateTime @updatedAt
+}
+
+model WorkType {
+  id           String   @id @default(cuid())
+  title        String
+  unit         String
+  pricePerUnit Float
+  sortOrder    Int      @default(0)
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([enabled, sortOrder])
+}
