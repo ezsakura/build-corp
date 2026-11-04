@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 umask 077
 
-APP_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-cd "$APP_DIR"
+GITHUB_REPOSITORY='ezsakura/build-corp'
+APP_DIR='/opt/build-corp'
 
 fail() {
   printf 'Ошибка: %s\n' "$1" >&2
@@ -55,7 +55,9 @@ remove_env_value() {
   sed -i "/^${key}=/d" .env
 }
 
-[[ -f docker-compose.yml && -f Caddyfile ]] || fail 'Запустите deploy.sh из клонированного каталога проекта.'
+[[ "$EUID" -eq 0 ]] || fail 'Запустите установку через sudo: sudo bash deploy.sh.'
+mkdir -p "$APP_DIR"
+cd "$APP_DIR"
 
 install_docker() {
   [[ "$EUID" -eq 0 ]] || fail 'Для установки Docker запустите скрипт через sudo: sudo bash deploy.sh.'
@@ -88,12 +90,34 @@ if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>
   install_docker
 fi
 command -v openssl >/dev/null 2>&1 || fail 'Не найдена команда openssl; установите пакет openssl.'
+command -v curl >/dev/null 2>&1 || fail 'Не найдена команда curl; установите пакет curl.'
 if ! docker info >/dev/null 2>&1; then
   if [[ "$EUID" -eq 0 ]] && command -v systemctl >/dev/null 2>&1; then
     systemctl enable --now docker
   fi
   docker info >/dev/null 2>&1 || fail 'Docker Engine не запущен или у пользователя нет доступа. Запустите Docker либо выполните скрипт через sudo.'
 fi
+
+printf 'Для загрузки закрытых образов GHCR нужен GitHub Personal Access Token с правом read:packages.\n'
+read -r -p 'GitHub username: ' GHCR_USERNAME
+[[ -n "$GHCR_USERNAME" ]] || fail 'Не задан GitHub username.'
+read -r -s -p 'GitHub token (ввод скрыт): ' GHCR_TOKEN
+printf '\n'
+[[ -n "$GHCR_TOKEN" ]] || fail 'Не задан GitHub token.'
+
+printf 'Скачиваю конфигурацию развертывания из GitHub.\n'
+for config_file in docker-compose.yml Caddyfile; do
+  curl -fsSL \
+    -H 'Accept: application/vnd.github.raw' \
+    -H "Authorization: Bearer $GHCR_TOKEN" \
+    "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/$config_file?ref=main" \
+    -o "$config_file" ||
+    fail "Не удалось скачать $config_file. Проверьте доступ к GitHub-репозиторию."
+done
+
+printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin ||
+  fail 'Не удалось выполнить вход в GHCR. Проверьте username и токен с правом read:packages.'
+unset GHCR_TOKEN
 
 GENERATED_ADMIN_PASSWORD=''
 if [[ -f .env ]]; then
@@ -108,6 +132,7 @@ if [[ -f .env ]]; then
   set_env_value SITE_DOMAIN "$SITE_DOMAIN"
   set_env_value ADMIN_DOMAIN "$ADMIN_DOMAIN"
   set_env_value COOKIE_SECURE true
+  set_env_value IMAGE_REPOSITORY "ghcr.io/$GITHUB_REPOSITORY"
   remove_env_value TELEGRAM_BOT_TOKEN
   remove_env_value TELEGRAM_CHAT_ID
   remove_env_value TELEGRAM_ALLOWED_USER_IDS
@@ -149,6 +174,7 @@ CLIENT_PORT=3000
 ADMIN_PORT=3001
 SITE_DOMAIN=$SITE_DOMAIN
 ADMIN_DOMAIN=$ADMIN_DOMAIN
+IMAGE_REPOSITORY=ghcr.io/$GITHUB_REPOSITORY
 EOF
   chmod 600 "$tmp_env"
   mv "$tmp_env" .env
@@ -164,7 +190,8 @@ done
 [[ -n "$(env_value SITE_DOMAIN)" && -n "$(env_value ADMIN_DOMAIN)" ]] || fail 'В .env не заданы SITE_DOMAIN и ADMIN_DOMAIN.'
 
 docker compose --profile production config --quiet || fail 'Проверка docker-compose завершилась ошибкой; проверьте .env.'
-docker compose --profile production up -d --build
+docker compose --profile production pull || fail 'Не удалось скачать образы. Убедитесь, что GitHub Actions уже опубликовал образы в GHCR.'
+docker compose --profile production up -d --no-build
 
 printf '\nРазвертывание запущено.\n'
 printf 'Сайт:   https://%s\n' "$(sed -n 's/^SITE_DOMAIN=//p' .env | head -n 1)"

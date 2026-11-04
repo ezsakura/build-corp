@@ -15,6 +15,7 @@ services:
       retries: 12
 
   backend:
+    image: ${IMAGE_REPOSITORY:-ghcr.io/ezsakura/build-corp}-backend:latest
     build:
       context: ./backend
     restart: unless-stopped
@@ -42,6 +43,7 @@ services:
       start_period: 10s
 
   migrate:
+    image: ${IMAGE_REPOSITORY:-ghcr.io/ezsakura/build-corp}-backend-migrate:latest
     build:
       context: ./backend
       target: build
@@ -53,6 +55,7 @@ services:
         condition: service_healthy
 
   seed:
+    image: ${IMAGE_REPOSITORY:-ghcr.io/ezsakura/build-corp}-backend:latest
     build:
       context: ./backend
     restart: "no"
@@ -63,6 +66,7 @@ services:
         condition: service_completed_successfully
 
   client:
+    image: ${IMAGE_REPOSITORY:-ghcr.io/ezsakura/build-corp}-client:latest
     build:
       context: ./frontend-client
     restart: unless-stopped
@@ -73,6 +77,7 @@ services:
         condition: service_healthy
 
   admin:
+    image: ${IMAGE_REPOSITORY:-ghcr.io/ezsakura/build-corp}-admin:latest
     build:
       context: ./frontend-admin
     restart: unless-stopped

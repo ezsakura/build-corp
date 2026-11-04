@@ -20,15 +20,21 @@
 
 Для production используется Caddy в профиле `production`. Он принимает HTTP/HTTPS на портах 80/443, автоматически получает и обновляет сертификаты и направляет сайт на основной домен, а панель — на поддомен.
 
-После `git clone` репозитория в каталог на VPS достаточно выполнить одну команду:
+При каждом push в ветку `main` GitHub Actions собирает production-образы и публикует их в GitHub Container Registry (GHCR). На VPS исходный код и `node_modules` не нужны: скрипт скачивает только Compose/Caddy-конфигурацию и запускает готовые контейнеры.
 
 ```bash
-sudo bash deploy.sh
+read -s -p "GitHub token (доступ к репозиторию и read:packages): " GH_TOKEN; printf '\n'
+curl --config <(printf 'header = "Authorization: Bearer %s"\n' "$GH_TOKEN") \
+  -H 'Accept: application/vnd.github.raw' -fsSL \
+  -o /tmp/build-corp-deploy.sh \
+  'https://api.github.com/repos/ezsakura/build-corp/contents/deploy.sh?ref=main'
+unset GH_TOKEN
+sudo bash /tmp/build-corp-deploy.sh
 ```
 
-Скрипт проверит Docker/Compose и, если они отсутствуют, установит Docker Engine и Compose plugin из официального подписанного apt-репозитория на Ubuntu/Debian. Для этого нужны права root, поэтому запускайте его через `sudo`. На других Linux-дистрибутивах установите Docker заранее. Затем скрипт спросит домены и данные администратора. DB-пароль и JWT-секрет он сгенерирует сам, запишет `.env` с правами `600`, установит `COOKIE_SECURE=true`, проверит Compose и запустит production-профиль. Настройки компании задаются в конструкторе сайта и хранятся в PostgreSQL. При существующем `.env` скрипт сохранит секреты, обновит домены и secure-cookie, а также удалит устаревшие поля Telegram и `COMPANY_*`.
+Перед первым запуском дождитесь успешного workflow `Build and publish Docker images` в GitHub Actions. Команда выше запросит токен для скачивания установочного скрипта из приватного репозитория; затем сам скрипт запросит GitHub username и токен с доступом к репозиторию и `read:packages`. Для classic PAT нужны права `repo` и `read:packages`; для fine-grained PAT — чтение Contents и Packages. Docker сохранит вход на VPS. Не передавайте токен другим людям. Скрипт проверит Docker/Compose и, если они отсутствуют, установит Docker Engine и Compose plugin из официального подписанного apt-репозитория на Ubuntu/Debian. Затем он спросит домены и данные администратора. DB-пароль и JWT-секрет будут сгенерированы автоматически, `.env` сохранится в `/opt/build-corp` с правами `600`, будет включен `COOKIE_SECURE=true`, скачаны образы и запущен production-профиль. Настройки компании задаются в конструкторе сайта и хранятся в PostgreSQL. При повторном запуске скрипт сохранит секреты, обновит домены и обновит контейнеры до опубликованных образов.
 
-До запуска скрипта создайте DNS A-записи для обоих доменов на IP VPS. Откройте TCP 80/443 и SSH; UDP 443 нужен для HTTP/3. Затем из клонированного каталога выполните `sudo bash deploy.sh`.
+До запуска скрипта создайте DNS A-записи для обоих доменов на IP VPS. Откройте TCP 80/443 и SSH; UDP 443 нужен для HTTP/3. Для обновления скачайте скрипт повторно и запустите его снова; клонировать репозиторий на сервер не нужно.
 
 Пример адресов: `https://chuvashstroy.ru` и `https://admin.chuvashstroy.ru`. Сервисы сайта и панели дополнительно доступны только на loopback-портах 3000/3001; PostgreSQL и API наружу не публикуются. Сертификаты Caddy сохраняются в volume `caddy-data`.
 
